@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Lipid Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: -apple-system, system-ui, sans-serif; padding: 20px; max-width: 800px; margin: auto; background: #f4f7f6; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        input { padding: 8px; margin: 5px 0; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #2ea44f; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 16px; }
+        button:hover { background: #2c974b; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { text-align: left; padding: 10px; border-bottom: 1px solid #ddd; }
+        .chart-container { position: relative; height: 40vh; width: 100%; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>Add Blood Work</h2>
+        <label>Date</label>
+        <input type="date" id="date">
+        <label>Total Cholesterol (mg/dL)</label>
+        <input type="number" id="chol" placeholder="e.g. 200">
+        <label>Medication & Dose</label>
+        <input type="text" id="meds" placeholder="e.g. Atorvastatin 20mg">
+        <button onclick="addData()">Save Entry</button>
+    </div>
+
+    <div class="card chart-container">
+        <canvas id="lipidChart"></canvas>
+    </div>
+
+    <div class="card">
+        <h3>History</h3>
+        <table id="historyTable">
+            <thead>
+                <tr><th>Date</th><th>Cholesterol</th><th>Medication</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <button onclick="clearData()" style="background:#cf222e; margin-top:20px;">Clear All Data</button>
+    </div>
+
+    <script>
+        let myData = JSON.parse(localStorage.getItem('lipidLogs')) || [];
+
+        function addData() {
+            const date = document.getElementById('date').value;
+            const chol = document.getElementById('chol').value;
+            const meds = document.getElementById('meds').value;
+
+            if(!date || !chol) return alert("Please enter date and value");
+
+            myData.push({ date, chol: parseInt(chol), meds });
+            myData.sort((a, b) => new Date(a.date) - new Date(b.date));
+            localStorage.setItem('lipidLogs', JSON.stringify(myData));
+            renderAll();
+        }
+
+        function renderAll() {
+            const tbody = document.querySelector("#historyTable tbody");
+            tbody.innerHTML = "";
+            myData.forEach(item => {
+                tbody.innerHTML += `<tr><td>${item.date}</td><td>${item.chol}</td><td>${item.meds}</td></tr>`;
+            });
+            updateChart();
+        }
+
+        function updateChart() {
+            const ctx = document.getElementById('lipidChart').getContext('2d');
+            if (window.chartObj) window.chartObj.destroy();
+            
+            window.chartObj = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: myData.map(d => d.date),
+                    datasets: [{
+                        label: 'Total Cholesterol',
+                        data: myData.map(d => d.chol),
+                        borderColor: '#2ea44f',
+                        tension: 0.1,
+                        fill: false
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        function clearData() { if(confirm("Erase everything?")) { localStorage.clear(); location.reload(); } }
+        renderAll();
+    </script>
+</body>
+</html>
