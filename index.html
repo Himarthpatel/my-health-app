@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>My Lipid Tracker</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.39.0/build/stlite.css"/>
+    <style>#root { height: 100vh; }</style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.39.0/build/stlite.js"></script>
+    <script>
+      stlite.mount({
+        requirements: ["plotly", "pandas"],
+        entrypoint: "app.py",
+        files: {
+          "app.py": `
+import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+
+st.set_page_config(page_title="Lipid Tracker", layout="wide")
+st.title("🛡️ Lipid & Medication History")
+
+# Your Real Data
+data = {
+    'Date': ['2024-05', '2024-12', '2025-01', '2025-06', '2025-09', '2026-02'],
+    'CHOL': [385, 248, 151, 151, 195, 183],
+    'LDL': [291, 188, 96, 96, 124, 125],
+    'TRIG': [254, 234, 170, 217, 275, 225],
+    'HDL': [28, 27, 18, 23, 17, 18]
+}
+df = pd.DataFrame(data)
+
+# Create the Chart
+fig = go.Figure()
+
+# Add Reference Borders (Dashed Lines)
+fig.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="LDL Goal (70)")
+fig.add_hline(y=150, line_dash="dash", line_color="brown", annotation_text="Trig Goal (150)")
+
+# Add Data Lines
+fig.add_trace(go.Scatter(x=df['Date'], y=df['LDL'], name="LDL (Bad)", line=dict(color='red', width=4)))
+fig.add_trace(go.Scatter(x=df['Date'], y=df['TRIG'], name="Triglycerides", line=dict(color='brown', width=2)))
+fig.add_trace(go.Scatter(x=df['Date'], y=df['CHOL'], name="Total Chol", line=dict(color='orange', width=2)))
+
+fig.update_layout(title="Lipid Trends vs. Healthy Borders", xaxis_title="Date", yaxis_title="mg/dL", hovermode="x unified")
+st.plotly_chart(fig, use_container_width=True)
+
+# HDL Chart Separately
+st.subheader("HDL (Good Cholesterol) Detail")
+fig_hdl = go.Figure()
+fig_hdl.add_hline(y=40, line_dash="dash", line_color="green", annotation_text="Min Goal (40)")
+fig_hdl.add_trace(go.Scatter(x=df['Date'], y=df['HDL'], name="HDL", line=dict(color='green', width=4)))
+fig_hdl.update_layout(yaxis_range=[0, 50])
+st.plotly_chart(fig_hdl, use_container_width=True)
+
+st.info("Current Phase: Rosuvastatin 40 (Dinner) + Nustendi (Lunch)")
+          `
+        }
+      }, document.getElementById("root"));
+    </script>
+  </body>
+</html>
