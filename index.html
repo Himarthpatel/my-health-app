@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Professional Lipid Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <style>
+        body { font-family: "Segoe UI", sans-serif; padding: 20px; max-width: 1100px; margin: auto; background: #f8f9fa; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+        input { padding: 10px; border: 1px solid #ddd; border-radius: 6px; width: 100%; }
+        button { background: #007bff; color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px; }
+        .edit-btn { background: #ffc107; color: black; padding: 4px 8px; border-radius: 4px; border: none; cursor: pointer; }
+        .del-btn { background: #dc3545; color: white; padding: 4px 8px; border-radius: 4px; border: none; cursor: pointer; margin-left: 5px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
+        .chart-container { height: 600px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2 id="formTitle">Add/Edit Record</h2>
+    <input type="hidden" id="editId" value="-1">
+    <div class="grid">
+        <div><label>Date</label><input type="date" id="date"></div>
+        <div><label>CHOL</label><input type="number" id="chol"></div>
+        <div><label>LDL-D</label><input type="number" id="ldl"></div>
+        <div><label>TRIG</label><input type="number" id="trig"></div>
+        <div><label>HDL</label><input type="number" id="hdl"></div>
+        <div><label>Regime</label><input type="text" id="meds" placeholder="e.g. Atorvastatin"></div>
+    </div>
+    <button id="saveBtn" onclick="saveData()">Save Entry</button>
+</div>
+
+<div class="card chart-container">
+    <canvas id="lipidChart"></canvas>
+</div>
+
+<div class="card">
+    <h3>History</h3>
+    <table id="historyTable">
+        <thead><tr><th>Date</th><th>CHOL</th><th>LDL</th><th>TRIG</th><th>HDL</th><th>Regime</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<script>
+    Chart.register(ChartDataLabels);
+    let myData = JSON.parse(localStorage.getItem('lipid_local_final')) || [];
+
+    function saveData() {
+        const id = parseInt(document.getElementById('editId').value);
+        const entry = {
+            date: document.getElementById('date').value,
+            chol: parseInt(document.getElementById('chol').value),
+            ldl: parseInt(document.getElementById('ldl').value),
+            trig: parseInt(document.getElementById('trig').value),
+            hdl: parseInt(document.getElementById('hdl').value),
+            meds: document.getElementById('meds').value || (myData.length > 0 ? myData[myData.length-1].meds : "Baseline")
+        };
+
+        if(!entry.date || isNaN(entry.chol)) return alert("Date and Values required.");
+
+        if(id > -1) myData[id] = entry; 
+        else myData.push(entry);
+
+        myData.sort((a, b) => new Date(a.date) - new Date(b.date));
+        localStorage.setItem('lipid_local_final', JSON.stringify(myData));
+        resetForm();
+        renderAll();
+    }
+
+    function resetForm() {
+        document.getElementById('editId').value = "-1";
+        document.getElementById('formTitle').innerText = "Add/Edit Record";
+        document.getElementById('saveBtn').innerText = "Save Entry";
+        document.querySelectorAll('input').forEach(i => i.value = "");
+    }
+
+    function prepareEdit(index) {
+        const item = myData[index];
+        document.getElementById('date').value = item.date;
+        document.getElementById('chol').value = item.chol;
+        document.getElementById('ldl').value = item.ldl;
+        document.getElementById('trig').value = item.trig;
+        document.getElementById('hdl').value = item.hdl;
+        document.getElementById('meds').value = item.meds;
+        document.getElementById('editId').value = index;
+        document.getElementById('formTitle').innerText = "Editing Record...";
+        document.getElementById('saveBtn').innerText = "Update Record";
+        window.scrollTo(0,0);
+    }
+
+    function deleteEntry(index) {
+        if(confirm("Delete this record?")) {
+            myData.splice(index, 1);
+            localStorage.setItem('lipid_local_final', JSON.stringify(myData));
+            renderAll();
+        }
+    }
+
+    function getAnnotations() {
+        const ann = {};
+        if (myData.length === 0) return ann;
+
+        let currentMed = myData[0].meds;
+        let startIdx = 0;
+        const colors = ['rgba(200,200,200,0.1)', 'rgba(40,167,69,0.1)', 'rgba(255,193,7,0.1)'];
+        let colorStep = 0;
+
+        for (let i = 0; i <= myData.length; i++) {
+            if (i === myData.length || myData[i].meds !== currentMed) {
+                const endIdx = i - 1;
+                // Phase background and Top Label
+                ann['phase' + i] = {
+                    type: 'box',
+                    xMin: startIdx - 0.5,
+                    xMax: endIdx + 0.5,
+                    backgroundColor: colors[colorStep % colors.length],
+                    borderWidth: 0,
+                    label: {
+                        content: currentMed.toUpperCase(),
+                        display: true,
+                        position: { x: 'center', y: 'start' }, // Puts label at the TOP
+                        yAdjust: 10,
+                        backgroundColor: 'white',
+                        font: { weight: 'bold', size: 12 },
+                        padding: 6,
+                        borderRadius: 4,
+                        borderWidth: 1,
+                        borderColor: '#ccc'
+                    }
+                };
+                if (i < myData.length) {
+                    currentMed = myData[i].meds;
+                    startIdx = i;
+                    colorStep++;
+                }
+            }
+        }
+
+        // Standard Threshold Lines
+        [{v:200, c:'orange'}, {v:70, c:'red'}, {v:150, c:'brown'}, {v:40, c:'green'}].forEach((l, i) => {
+            ann['line' + i] = { type: 'line', yMin: l.v, yMax: l.v, borderColor: l.c, borderDash: [6,6], borderWidth: 1 };
+        });
+
+        return ann;
+    }
+
+    function renderAll() {
+        const tbody = document.querySelector("#historyTable tbody");
+        tbody.innerHTML = "";
+        myData.forEach((item, index) => {
+            tbody.innerHTML += `<tr>
+                <td>${item.date}</td><td>${item.chol}</td><td>${item.ldl}</td><td>${item.trig}</td><td>${item.hdl}</td><td>${item.meds}</td>
+                <td>
+                    <button class="edit-btn" onclick="prepareEdit(${index})">Edit</button>
+                    <button class="del-btn" onclick="deleteEntry(${index})">Delete</button>
+                </td>
+            </tr>`;
+        });
+        updateChart();
+    }
+
+    function updateChart() {
+        const ctx = document.getElementById('lipidChart').getContext('2d');
+        if (window.chartObj) window.chartObj.destroy();
+        window.chartObj = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: myData.map(d => d.date),
+                datasets: [
+                    { label: 'CHOL', data: myData.map(d => d.chol), borderColor: 'orange' },
+                    { label: 'LDL', data: myData.map(d => d.ldl), borderColor: 'red' },
+                    { label: 'TRIG', data: myData.map(d => d.trig), borderColor: 'brown' },
+                    { label: 'HDL', data: myData.map(d => d.hdl), borderColor: 'green' }
+                ].map(ds => ({ ...ds, backgroundColor: ds.borderColor, tension: 0, borderWidth: 3, pointRadius: 6 }))
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    annotation: { annotations: getAnnotations() },
+                    datalabels: { align: 'top', font: { weight: 'bold' }, backgroundColor: c => c.dataset.borderColor, color: 'white', borderRadius: 4, padding: 4 }
+                },
+                scales: { y: { beginAtZero: true, grace: '10%' } }
+            }
+        });
+    }
+
+    renderAll();
+</script>
+</body>
+</html>
