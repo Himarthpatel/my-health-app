@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Professional Lipid Profile</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <style>
+        body { font-family: "Segoe UI", Roboto, sans-serif; padding: 20px; max-width: 1200px; margin: auto; background: #f8f9fa; color: #333; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); margin-bottom: 25px; border: 1px solid #e1e4e8; }
+        h2, h3 { margin-top: 0; color: #1a1a1a; border-bottom: 2px solid #007bff; display: inline-block; padding-bottom: 5px; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
+        input { padding: 12px; border: 1px solid #ccd1d9; border-radius: 6px; width: 100%; box-sizing: border-box; transition: border 0.2s; }
+        input:focus { border-color: #007bff; outline: none; box-shadow: 0 0 0 3px rgba(0,123,255,0.1); }
+        label { font-weight: 600; font-size: 0.85em; color: #4b5563; margin-bottom: 6px; display: block; }
+        button { background: #007bff; color: white; border: none; padding: 14px; border-radius: 8px; cursor: pointer; width: 100%; font-size: 16px; margin-top: 20px; font-weight: 600; transition: all 0.2s; }
+        button:hover { background: #0056b3; }
+        .chart-container { height: 650px; padding: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9em; }
+        th { background: #f1f3f5; font-weight: 600; color: #4b5563; text-transform: uppercase; letter-spacing: 0.5px; }
+        th, td { text-align: left; padding: 14px; border-bottom: 1px solid #edf2f7; }
+        .badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; background: #e2e8f0; color: #475569; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>Lab Entry</h2>
+        <div class="grid">
+            <div><label>Date</label><input type="date" id="date"></div>
+            <div><label>Total CHOL</label><input type="number" id="chol" placeholder="200"></div>
+            <div><label>LDL-D</label><input type="number" id="ldl" placeholder="70"></div>
+            <div><label>Triglycerides</label><input type="number" id="trig" placeholder="150"></div>
+            <div><label>HDL</label><input type="number" id="hdl" placeholder="40"></div>
+            <div><label>Medication Note</label><input type="text" id="meds" placeholder="e.g. Lipitor 10mg"></div>
+        </div>
+        <button id="saveBtn" onclick="addData()">Update Medical Profile</button>
+    </div>
+
+    <div class="card chart-container">
+        <canvas id="lipidChart"></canvas>
+    </div>
+
+    <div class="card">
+        <h3>History Log</h3>
+        <table id="historyTable">
+            <thead>
+                <tr><th>Date</th><th>CHOL</th><th>LDL-D</th><th>TRIG</th><th>HDL</th><th>Regime</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <button onclick="clearData()" style="background:#ef4444; width: auto; margin-top: 30px; font-size: 13px;">Clear Dataset</button>
+    </div>
+
+    <script>
+        // Register the DataLabels plugin
+        Chart.register(ChartDataLabels);
+
+        let myData = JSON.parse(localStorage.getItem('lipid_pro_v1')) || [];
+
+        function addData() {
+            const dateVal = document.getElementById('date').value;
+            const cholVal = document.getElementById('chol').value;
+            let medsInput = document.getElementById('meds').value.trim();
+            
+            if(!dateVal || !cholVal) return alert("Date and Cholesterol required.");
+
+            if (medsInput === "" && myData.length > 0) {
+                medsInput = myData[myData.length - 1].meds;
+            } else if (medsInput === "") {
+                medsInput = "Baseline";
+            }
+
+            const entry = {
+                date: dateVal,
+                chol: parseInt(cholVal),
+                ldl: parseInt(document.getElementById('ldl').value) || 0,
+                trig: parseInt(document.getElementById('trig').value) || 0,
+                hdl: parseInt(document.getElementById('hdl').value) || 0,
+                meds: medsInput
+            };
+
+            myData.push(entry);
+            myData.sort((a, b) => new Date(a.date) - new Date(b.date));
+            localStorage.setItem('lipid_pro_v1', JSON.stringify(myData));
+            
+            location.reload(); // Refresh to update everything cleanly
+        }
+
+        function getPhaseAnnotations() {
+            const annotations = {};
+            if (myData.length === 0) return annotations;
+
+            let currentMed = myData[0].meds;
+            let startIndex = 0;
+            const colors = ['rgba(100, 116, 139, 0.08)', 'rgba(34, 197, 94, 0.08)', 'rgba(234, 179, 8, 0.08)', 'rgba(239, 68, 68, 0.08)', 'rgba(59, 130, 246, 0.08)'];
+            let colorIdx = 0;
+
+            for (let i = 0; i <= myData.length; i++) {
+                if (i === myData.length || myData[i].meds !== currentMed) {
+                    const endIndex = i - 1;
+                    annotations['phase' + i] = {
+                        type: 'box',
+                        xMin: startIndex - 0.5,
+                        xMax: endIndex + 0.5,
+                        backgroundColor: colors[colorIdx % colors.length],
+                        borderWidth: 0,
+                        label: {
+                            content: currentMed.toUpperCase(),
+                            display: true,
+                            position: { x: 'center', y: 'start' },
+                            yAdjust: 10,
+                            backgroundColor: 'white',
+                            color: '#1e293b',
+                            font: { size: 12, weight: 'bold' },
+                            padding: 6,
+                            borderRadius: 4,
+                            borderWidth: 1,
+                            borderColor: '#cbd5e1'
+                        }
+                    };
+                    if (i < myData.length) {
+                        currentMed = myData[i].meds;
+                        startIndex = i;
+                        colorIdx++;
+                    }
+                }
+            }
+
+            // Standards lines
+            const lines = [{v:200, c:'orange'}, {v:150, c:'brown'}, {v:70, c:'red'}, {v:40, c:'green'}];
+            lines.forEach((l, idx) => {
+                annotations['line'+idx] = {
+                    type: 'line', yMin: l.v, yMax: l.v, borderColor: l.c, borderDash: [8, 4], borderWidth: 1,
+                    label: { content: l.v, display: true, position: 'end', font: {size: 10}, backgroundColor: 'rgba(255,255,255,0.8)' }
+                };
+            });
+            return annotations;
+        }
+
+        function updateChart() {
+            const ctx = document.getElementById('lipidChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: myData.map(d => d.date),
+                    datasets: [
+                        { label: 'Total CHOL', data: myData.map(d => d.chol), borderColor: 'orange', backgroundColor: 'orange' },
+                        { label: 'LDL-D', data: myData.map(d => d.ldl), borderColor: 'red', backgroundColor: 'red' },
+                        { label: 'Triglycerides', data: myData.map(d => d.trig), borderColor: 'brown', backgroundColor: 'brown' },
+                        { label: 'HDL', data: myData.map(d => d.hdl), borderColor: 'green', backgroundColor: 'green' }
+                    ].map(ds => ({ ...ds, tension: 0, borderWidth: 3, pointRadius: 6, pointHoverRadius: 8 }))
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top', labels: { usePointStyle: true, padding: 20 } },
+                        annotation: { annotations: getPhaseAnnotations() },
+                        datalabels: {
+                            align: 'top',
+                            backgroundColor: (context) => context.dataset.borderColor,
+                            borderRadius: 4,
+                            color: 'white',
+                            font: { weight: 'bold', size: 10 },
+                            formatter: Math.round,
+                            padding: 4
+                        }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f0f0f0' }, title: { display: true, text: 'mg/dL' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function renderAll() {
+            const tbody = document.querySelector("#historyTable tbody");
+            tbody.innerHTML = "";
+            myData.forEach(item => {
+                tbody.innerHTML += `<tr>
+                    <td>${item.date}</td>
+                    <td><b>${item.chol}</b></td>
+                    <td>${item.ldl}</td>
+                    <td>${item.trig}</td>
+                    <td>${item.hdl}</td>
+                    <td><span class="badge">${item.meds}</span></td>
+                </tr>`;
+            });
+            updateChart();
+        }
+
+        function clearData() { if(confirm("Permanently erase all medical data?")) { localStorage.clear(); location.reload(); } }
+        renderAll();
+    </script>
+</body>
+</html>
