@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Professional Lipid Profile</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <style>
+        body { font-family: "Segoe UI", Tahoma, sans-serif; padding: 20px; max-width: 1200px; margin: auto; background: #f8f9fa; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .chart-container { height: 600px; position: relative; }
+        h2 { color: #333; border-left: 5px solid #007bff; padding-left: 15px; margin-bottom: 10px; }
+        #status { font-size: 0.8em; color: #666; margin-bottom: 20px; font-style: italic; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
+        th { background: #f1f3f5; color: #444; }
+        .badge { padding: 4px 8px; background: #e9ecef; border-radius: 4px; font-weight: bold; font-size: 11px; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>Lipid Profile History</h2>
+        <div id="status">Connecting to Google Drive...</div>
+        <div class="chart-container">
+            <canvas id="lipidChart"></canvas>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Laboratory Records</h3>
+        <table id="historyTable">
+            <thead>
+                <tr><th>Date</th><th>CHOL</th><th>LDL-D</th><th>TRIG</th><th>HDL</th><th>Regime</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+        Chart.register(ChartDataLabels);
+
+        // Your specific CSV link
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRjzaygr0UXnmx1Bf54g1a242qb11IPXTRSyeP3ZmLLCNOkl6yAXQ4WYw3nhbKR9l2el98at4uKdTsH/pub?gid=926531515&single=true&output=csv';
+
+        let myData = [];
+
+        async function loadSheetData() {
+            const statusEl = document.getElementById('status');
+            try {
+                const response = await fetch(CSV_URL);
+                const text = await response.text();
+                
+                // Parse CSV text into Rows
+                const rows = text.split('\n').map(row => row.split(','));
+                
+                // Skip the header (Row 0) and map the rest
+                myData = rows.slice(1).map(cols => ({
+                    date: cols[0]?.trim(),
+                    chol: parseInt(cols[1]),
+                    ldl: parseInt(cols[2]),
+                    trig: parseInt(cols[3]),
+                    hdl: parseInt(cols[4]),
+                    meds: cols[5]?.trim() || "N/A"
+                })).filter(d => d.date && !isNaN(d.chol));
+
+                statusEl.innerText = `Successfully loaded ${myData.length} records from Google Sheets.`;
+                renderUI();
+            } catch (err) {
+                statusEl.innerText = "Error: Could not read Google Sheet. Make sure it is 'Published to Web' as CSV.";
+                console.error(err);
+            }
+        }
+
+        function renderUI() {
+            const tbody = document.querySelector("#historyTable tbody");
+            tbody.innerHTML = "";
+            myData.forEach(item => {
+                tbody.innerHTML += `<tr>
+                    <td>${item.date}</td>
+                    <td><b>${item.chol}</b></td>
+                    <td>${item.ldl}</td>
+                    <td>${item.trig}</td>
+                    <td>${item.hdl}</td>
+                    <td><span class="badge">${item.meds}</span></td>
+                </tr>`;
+            });
+            updateChart();
+        }
+
+        function getPhaseAnnotations() {
+            const annotations = {};
+            if (myData.length === 0) return annotations;
+
+            let currentMed = myData[0].meds;
+            let startIndex = 0;
+            const colors = ['rgba(100, 116, 139, 0.08)', 'rgba(34, 197, 94, 0.08)', 'rgba(234, 179, 8, 0.08)'];
+            let colorIdx = 0;
+
+            for (let i = 0; i <= myData.length; i++) {
+                if (i === myData.length || myData[i].meds !== currentMed) {
+                    annotations['phase' + i] = {
+                        type: 'box',
+                        xMin: startIndex - 0.5,
+                        xMax: i - 1 + 0.5,
+                        backgroundColor: colors[colorIdx % colors.length],
+                        label: {
+                            content: currentMed.toUpperCase(),
+                            display: true,
+                            position: 'top',
+                            backgroundColor: 'white',
+                            font: { weight: 'bold', size: 11 }
+                        }
+                    };
+                    if (i < myData.length) {
+                        currentMed = myData[i].meds;
+                        startIndex = i;
+                        colorIdx++;
+                    }
+                }
+            }
+
+            // Target lines
+            [{v:200, c:'orange'}, {v:70, c:'red'}, {v:150, c:'brown'}, {v:40, c:'green'}].forEach((l, i) => {
+                annotations['line'+i] = { type: 'line', yMin: l.v, yMax: l.v, borderColor: l.c, borderDash: [6,6], borderWidth: 1.5 };
+            });
+
+            return annotations;
+        }
+
+        function updateChart() {
+            const ctx = document.getElementById('lipidChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: myData.map(d => d.date),
+                    datasets: [
+                        { label: 'CHOL', data: myData.map(d => d.chol), borderColor: 'orange' },
+                        { label: 'LDL-D', data: myData.map(d => d.ldl), borderColor: 'red' },
+                        { label: 'TRIG', data: myData.map(d => d.trig), borderColor: 'brown' },
+                        { label: 'HDL', data: myData.map(d => d.hdl), borderColor: 'green' }
+                    ].map(ds => ({ ...ds, backgroundColor: ds.borderColor, tension: 0, borderWidth: 3, pointRadius: 5 }))
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        annotation: { annotations: getPhaseAnnotations() },
+                        datalabels: {
+                            align: 'top',
+                            backgroundColor: c => c.dataset.borderColor,
+                            color: 'white',
+                            borderRadius: 3,
+                            font: { weight: 'bold', size: 10 }
+                        }
+                    },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        }
+
+        loadSheetData();
+    </script>
+</body>
+</html>
