@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Professional Lipid Profile</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <style>
+        body { font-family: "Segoe UI", sans-serif; padding: 20px; max-width: 1200px; margin: auto; background: #f8f9fa; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .chart-container { height: 650px; min-width: 800px; }
+        .scroll-wrapper { overflow-x: auto; } /* Allows horizontal scroll on mobile */
+        h2 { color: #333; border-left: 5px solid #007bff; padding-left: 15px; margin-bottom: 5px; }
+        #status { font-size: 0.8em; color: #666; margin-bottom: 20px; font-style: italic; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
+        th { background: #f1f3f5; }
+        .badge { padding: 4px 8px; background: #e9ecef; border-radius: 4px; font-weight: bold; font-size: 11px; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>Lipid Profile History</h2>
+        <div id="status">Syncing with Google Drive...</div>
+        <div class="scroll-wrapper">
+            <div class="chart-container">
+                <canvas id="lipidChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Laboratory Records</h3>
+        <table id="historyTable">
+            <thead>
+                <tr><th>Date</th><th>CHOL</th><th>LDL-D</th><th>TRIG</th><th>HDL</th><th>Regime</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+        Chart.register(ChartDataLabels);
+
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRjzaygr0UXnmx1Bf54g1a242qb11IPXTRSyeP3ZmLLCNOkl6yAXQ4WYw3nhbKR9l2el98at4uKdTsH/pub?gid=926531515&single=true&output=csv';
+
+        let myData = [];
+
+        async function loadSheetData() {
+            try {
+                const response = await fetch(CSV_URL);
+                const text = await response.text();
+                const rows = text.split('\n').map(row => row.split(','));
+                
+                myData = rows.slice(1).map(cols => ({
+                    date: cols[0]?.trim(),
+                    chol: parseInt(cols[1]),
+                    ldl: parseInt(cols[2]),
+                    trig: parseInt(cols[3]),
+                    hdl: parseInt(cols[4]),
+                    meds: cols[5]?.trim() || "N/A"
+                })).filter(d => d.date && !isNaN(d.chol));
+
+                document.getElementById('status').innerText = "Last sync: " + new Date().toLocaleTimeString();
+                renderUI();
+            } catch (err) {
+                document.getElementById('status').innerText = "Sync Error.";
+            }
+        }
+
+        function getAnnotations() {
+            const ann = {};
+            
+            // 1. Target Lines (Dashed limits)
+            const targets = [
+                { label: 'Target CHOL < 200', value: 200, color: 'orange' },
+                { label: 'Target TRIG < 150', value: 150, color: 'brown' },
+                { label: 'Target LDL < 100', value: 100, color: 'red' },
+                { label: 'Target HDL > 40', value: 40, color: 'green' }
+            ];
+
+            targets.forEach((t, i) => {
+                ann['line' + i] = {
+                    type: 'line',
+                    yMin: t.value,
+                    yMax: t.value,
+                    borderColor: t.color,
+                    borderDash: [6, 6],
+                    borderWidth: 1.2,
+                    label: {
+                        display: true,
+                        content: t.label,
+                        position: 'end',
+                        backgroundColor: 'rgba(255,255,255,0.7)',
+                        color: t.color,
+                        font: { size: 10, weight: 'bold' },
+                        yAdjust: -8
+                    }
+                };
+            });
+
+            // 2. Medication Regime (TOP Labels - Staggered Fix)
+            if (myData.length > 0) {
+                let currentMed = myData[0].meds;
+                let startIdx = 0;
+                const bgColors = ['rgba(200,200,200,0.05)', 'rgba(34, 197, 94, 0.05)', 'rgba(234, 179, 8, 0.05)'];
+                let phaseCount = 0;
+
+                for (let i = 0; i <= myData.length; i++) {
+                    if (i === myData.length || myData[i].meds !== currentMed) {
+                        ann['phase' + i] = {
+                            type: 'box',
+                            xMin: startIdx - 0.5,
+                            xMax: (i - 1) + 0.5,
+                            backgroundColor: bgColors[phaseCount % bgColors.length],
+                            borderWidth: 0,
+                            label: {
+                                content: currentMed.toUpperCase(),
+                                display: true,
+                                position: { x: 'center', y: 'start' },
+                                yAdjust: (phaseCount % 2 === 0) ? 10 : 40, // STAGGERED HEIGHT to prevent overlap
+                                backgroundColor: 'white',
+                                color: '#444',
+                                font: { weight: 'bold', size: 11 },
+                                padding: 6,
+                                borderRadius: 4,
+                                borderWidth: 1,
+                                borderColor: '#ddd'
+                            }
+                        };
+                        if (i < myData.length) {
+                            currentMed = myData[i].meds;
+                            startIdx = i;
+                            phaseCount++;
+                        }
+                    }
+                }
+            }
+            return ann;
+        }
+
+        function renderUI() {
+            const tbody = document.querySelector("#historyTable tbody");
+            tbody.innerHTML = "";
+            myData.forEach(item => {
+                tbody.innerHTML += `<tr>
+                    <td>${item.date}</td><td><b>${item.chol}</b></td><td>${item.ldl}</td><td>${item.trig}</td><td>${item.hdl}</td><td><span class="badge">${item.meds}</span></td>
+                </tr>`;
+            });
+            updateChart();
+        }
+
+        function updateChart() {
+            const ctx = document.getElementById('lipidChart').getContext('2d');
+            if (window.chartObj) window.chartObj.destroy();
+            window.chartObj = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: myData.map(d => d.date),
+                    datasets: [
+                        { label: 'CHOL', data: myData.map(d => d.chol), borderColor: 'orange' },
+                        { label: 'LDL-D', data: myData.map(d => d.ldl), borderColor: 'red' },
+                        { label: 'TRIG', data: myData.map(d => d.trig), borderColor: 'brown' },
+                        { label: 'HDL', data: myData.map(d => d.hdl), borderColor: 'green' }
+                    ].map(ds => ({ ...ds, backgroundColor: ds.borderColor, tension: 0.1, borderWidth: 3, pointRadius: 5 }))
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        annotation: { annotations: getAnnotations() },
+                        datalabels: { 
+                            align: 'top', 
+                            font: { size: 10, weight: 'bold' }, 
+                            color: c => c.dataset.borderColor,
+                            formatter: (v) => v,
+                            offset: 4
+                        },
+                        legend: { position: 'bottom' }
+                    },
+                    scales: { 
+                        y: { 
+                            beginAtZero: true, 
+                            grace: '25%', // CREATES SPACE AT THE TOP FOR LABELS
+                            title: { display: true, text: 'mg/dL' }
+                        }
+                    }
+                }
+            });
+        }
+
+        loadSheetData();
+    </script>
+</body>
+</html>
