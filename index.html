@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lipid Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <style>
+        body { font-family: "Segoe UI", sans-serif; padding: 15px; background: #f0f2f5; margin: 0; }
+        .header { text-align: center; padding: 10px; }
+        .dashboard-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); 
+            gap: 25px; 
+            padding: 10px;
+        }
+        @media (max-width: 500px) { .dashboard-grid { grid-template-columns: 1fr; } }
+        .card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 6px 12px rgba(0,0,0,0.1); height: 450px; }
+        #status { text-align: center; font-size: 0.9em; font-weight: bold; color: #007bff; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2>Lipid Profile Analysis</h2>
+        <div id="status">🔄 Syncing with Google Sheets...</div>
+    </div>
+
+    <div class="dashboard-grid">
+        <div class="card"><canvas id="chartCHOL"></canvas></div>
+        <div class="card"><canvas id="chartLDL"></canvas></div>
+        <div class="card"><canvas id="chartTRIG"></canvas></div>
+        <div class="card"><canvas id="chartHDL"></canvas></div>
+    </div>
+
+    <script>
+        Chart.register(ChartDataLabels);
+
+        // This is your direct CSV link
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRjzaygr0UXnmx1Bf54g1a242qb11IPXTRSyeP3ZmLLCNOkl6yAXQ4WYw3nhbKR9l2el98at4uKdTsH/pub?gid=926531515&single=true&output=csv';
+
+        async function init() {
+            const statusEl = document.getElementById('status');
+            try {
+                const response = await fetch(CSV_URL);
+                const text = await response.text();
+                
+                // Parse CSV rows
+                const rows = text.split('\n').filter(r => r.trim() !== "").map(row => row.split(','));
+                
+                // Map and Clean Data
+                const data = rows.slice(1).map(cols => ({
+                    date: cols[0] ? cols[0].trim() : "",
+                    chol: parseFloat(cols[1]),
+                    ldl: parseFloat(cols[2]),
+                    trig: parseFloat(cols[3]),
+                    hdl: parseFloat(cols[4]),
+                    meds: cols[5] ? cols[5].trim() : "N/A"
+                })).filter(item => item.date !== "" && !isNaN(item.chol));
+
+                if (data.length === 0) {
+                    statusEl.innerText = "⚠️ Connection OK, but no data found in Sheet.";
+                    return;
+                }
+
+                // Strictly using the names from your sheet
+                renderChart("chartCHOL", "CHOL", data, "chol", "#e67e22", 200, "< 200");
+                renderChart("chartLDL", "LDL-D", data, "ldl", "#c0392b", 100, "< 100");
+                renderChart("chartTRIG", "TRIG", data, "trig", "#7e5109", 150, "< 150");
+                renderChart("chartHDL", "HDL", data, "hdl", "#27ae60", 40, "> 40");
+
+                statusEl.innerText = "✅ Dashboard Live. Last sync: " + new Date().toLocaleTimeString();
+                statusEl.style.color = "#28a745";
+
+            } catch (err) {
+                console.error(err);
+                statusEl.innerText = "❌ Sync Error. Please refresh the page.";
+                statusEl.style.color = "#dc3545";
+            }
+        }
+
+        function renderChart(canvasId, title, data, key, color, targetVal, targetLabel) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            
+            const annotations = {
+                targetLine: {
+                    type: 'line', yMin: targetVal, yMax: targetVal,
+                    borderColor: color, borderDash: [6, 6], borderWidth: 2,
+                    label: {
+                        display: true, content: 'Target ' + targetLabel, position: 'end',
+                        backgroundColor: 'white', color: color,
+                        font: { size: 10, weight: 'bold' }, padding: 4
+                    }
+                }
+            };
+
+            // Phase Background Colors
+            let currentMed = data[0].meds;
+            let startIdx = 0;
+            const phaseColors = [
+                'rgba(46, 204, 113, 0.15)', 
+                'rgba(241, 196, 15, 0.15)', 
+                'rgba(52, 152, 219, 0.15)', 
+                'rgba(155, 89, 182, 0.15)' 
+            ];
+            let colorIdx = 0;
+
+            for (let i = 0; i <= data.length; i++) {
+                if (i === data.length || data[i].meds !== currentMed) {
+                    annotations['phase' + i] = {
+                        type: 'box', xMin: startIdx - 0.5, xMax: i - 1 + 0.5,
+                        backgroundColor: phaseColors[colorIdx % phaseColors.length], borderWidth: 0,
+                        label: {
+                            content: currentMed.toUpperCase(), display: true, position: { x: 'center', y: 'start' },
+                            yAdjust: 10, backgroundColor: 'rgba(255, 255, 255, 0.9)', color: '#111', 
+                            font: { size: 11, weight: 'bold' }, padding: 6, borderRadius: 4, borderWidth: 1, borderColor: '#999'
+                        }
+                    };
+                    if (i < data.length) { currentMed = data[i].meds; startIdx = i; colorIdx++; }
+                }
+            }
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map(d => d.date),
+                    datasets: [{
+                        label: title, data: data.map(d => d[key]),
+                        borderColor: color, backgroundColor: color, tension: 0.1, borderWidth: 3, pointRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        title: { display: true, text: title, font: { size: 18, weight: 'bold' }, color: '#333' },
+                        legend: { display: false },
+                        annotation: { annotations: annotations },
+                        datalabels: { 
+                            align: 'top', font: { weight: 'bold', size: 11 }, color: color,
+                            formatter: (v) => Math.round(v), offset: 5
+                        }
+                    },
+                    scales: { 
+                        y: { beginAtZero: true, grace: '55%', title: { display: true, text: 'mg/dL' } },
+                        x: { ticks: { font: { size: 10, weight: 'bold' }, maxRotation: 45 } }
+                    }
+                }
+            });
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
